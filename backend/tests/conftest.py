@@ -21,10 +21,12 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 # Import the application AFTER env is wired.
+from app.core.security import hash_password  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
 import app.models  # noqa: E402,F401  -- ensure all models are registered
+from app.models.user import User  # noqa: E402
 
 
 @pytest_asyncio.fixture
@@ -80,3 +82,34 @@ async def client(session_factory) -> AsyncIterator[AsyncClient]:
 @pytest.fixture(scope="session")
 def anyio_backend() -> str:
     return "asyncio"
+
+
+DEMO_EMAIL = "demo@clinic.local"
+DEMO_PASSWORD = "demo1234"
+DEMO_FULL_NAME = "Демо Врач"
+
+
+@pytest_asyncio.fixture
+async def demo_doctor(db_session) -> User:
+    """Demo doctor user persisted in the test DB."""
+    user = User(
+        email=DEMO_EMAIL,
+        password_hash=hash_password(DEMO_PASSWORD),
+        full_name=DEMO_FULL_NAME,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def auth_headers(client, demo_doctor) -> dict[str, str]:
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD},
+    )
+    assert resp.status_code == 200, resp.text
+    token = resp.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
