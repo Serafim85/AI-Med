@@ -4,8 +4,8 @@ MVP веб-приложения, которое во время очного п�
 расшифровывает речь, структурирует протокол, предлагает топ-3 диагноза и план лечения,
 после чего формирует PDF.
 
-> **Текущее состояние:** Шаг 1 из 5 — скелет инфраструктуры. Бизнес-логики, авторизации,
-> распознавания речи и генерации PDF в этом шаге нет — они появятся в следующих шагах.
+> **Текущее состояние:** Шаг 2 из 5 — модель данных MVP, миграции, авторизация врача и
+> экран логина. Распознавание речи, LLM-анализ и генерация PDF появятся в следующих шагах.
 
 ## Скоуп MVP (по всем пяти шагам)
 
@@ -119,21 +119,63 @@ TanStack Query, Zustand, axios.
 5. Откройте `http://localhost:5173` — увидите заголовок **«AI-ассистент врача»**
    и кнопку «Проверить health-check». По клику на экране появится ответ `{"status":"ok"}`.
 
-## Alembic
+## Применение миграций
 
-Alembic сконфигурирован, но миграций пока нет (их добавит Шаг 2).
-Проверить работоспособность:
+В репозитории лежит начальная миграция `0001_initial_schema`, которая создаёт
+все таблицы MVP (`users`, `appointment_sessions`, `transcripts`, `protocols`,
+`diagnosis_suggestions`, `red_flags`, `treatment_plans`, `treatment_plan_items`,
+`audit_log`) и соответствующие Postgres ENUM-типы.
+
+Применить миграции на свежей БД:
+
+```bash
+docker compose up -d db backend
+docker compose exec backend alembic upgrade head
+```
+
+Проверить текущую ревизию:
 
 ```bash
 docker compose exec backend alembic current
 ```
 
-Сгенерировать первую миграцию в будущем:
+Откат последней миграции:
 
 ```bash
-docker compose exec backend alembic revision --autogenerate -m "init"
-docker compose exec backend alembic upgrade head
+docker compose exec backend alembic downgrade -1
 ```
+
+Создать следующую автомиграцию в будущих шагах:
+
+```bash
+docker compose exec backend alembic revision --autogenerate -m "что-то новое"
+```
+
+## Seed демо-врача
+
+Для локальной разработки положите в БД одного врача командой:
+
+```bash
+docker compose exec backend python -m scripts.seed_demo_doctor
+```
+
+Креды: `demo@clinic.local` / `demo1234`, ФИО «Демо Врач». Скрипт идемпотентный —
+повторный запуск не падает и не создаёт дубликат.
+
+## Запуск тестов
+
+```bash
+pip install -e "backend[dev]"      # один раз, в локальном venv
+pytest backend/tests
+```
+
+Тесты используют in-memory SQLite через `aiosqlite` и не требуют поднятого Postgres.
+
+## Авторизация
+
+После применения миграций и seed-скрипта можно залогиниться на
+`http://localhost:5173/login` под `demo@clinic.local` / `demo1234`. После входа
+фронт покажет шапку с ФИО врача и заглушку «Здесь будет список приёмов (Шаг 3)».
 
 ## Переменные окружения
 
