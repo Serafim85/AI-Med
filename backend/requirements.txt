@@ -12,3 +12,5 @@ python-jose[cryptography]>=3.3.0
 python-multipart>=0.0.9
 openai>=1.40.0
 anyio>=4.3.0
+weasyprint>=62
+jinja2>=3.1

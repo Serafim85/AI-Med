@@ -33,6 +33,7 @@ export interface AppointmentSession {
   consent_given_at: string | null
   created_at: string
   updated_at: string
+  final_diagnosis?: string | null
 }
 
 export interface SessionDetail extends AppointmentSession {
@@ -53,11 +54,27 @@ export interface CreateSessionPayload {
   appointment_type: AppointmentType
 }
 
+export interface ListSessionsParams {
+  status?: SessionStatus | 'all'
+  query?: string
+  limit?: number
+  offset?: number
+}
+
 export async function listSessions(
-  params: { limit?: number; offset?: number } = {},
+  params: ListSessionsParams = {},
 ): Promise<SessionListResponse> {
   const { data } = await apiClient.get<SessionListResponse>('/sessions', {
-    params: { limit: params.limit ?? 50, offset: params.offset ?? 0 },
+    params: {
+      limit: params.limit ?? 20,
+      offset: params.offset ?? 0,
+      ...(params.status && params.status !== 'all'
+        ? { status: params.status }
+        : {}),
+      ...(params.query && params.query.trim()
+        ? { query: params.query.trim() }
+        : {}),
+    },
   })
   return data
 }

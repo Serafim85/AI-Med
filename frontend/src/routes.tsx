@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage'
 import { SessionConfirmPage } from './pages/SessionConfirmPage'
 import { SessionCreatePage } from './pages/SessionCreatePage'
 import { SessionDetailPage } from './pages/SessionDetailPage'
+import { SessionViewPage } from './pages/SessionViewPage'
 import { SessionsListPage } from './pages/SessionsListPage'
 import { useAuthStore } from './store/auth'
 
@@ -31,6 +32,7 @@ export function AppRoutes() {
         <Route path="sessions/new" element={<SessionCreatePage />} />
         <Route path="sessions/:id" element={<SessionDetailPage />} />
         <Route path="sessions/:id/confirm" element={<SessionConfirmPage />} />
+        <Route path="sessions/:id/view" element={<SessionViewPage />} />
       </Route>
       <Route path="*" element={<RootRedirect />} />
     </Routes>

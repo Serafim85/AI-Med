@@ -56,6 +56,24 @@ async def _get_own_session(
     return sess
 
 
+def _ensure_not_finalized(sess: AppointmentSession) -> None:
+    """Mutating session-level actions are forbidden for confirmed/closed."""
+    if sess.status in (SessionStatus.confirmed, SessionStatus.closed):
+        raise HTTPException(
+            status_code=409,
+            detail="Сессия уже подтверждена или закрыта — изменения запрещены",
+        )
+
+
+def _ensure_not_closed(sess: AppointmentSession) -> None:
+    """Block any modification of a closed session (including transcripts)."""
+    if sess.status == SessionStatus.closed:
+        raise HTTPException(
+            status_code=409,
+            detail="Сессия закрыта — изменения запрещены",
+        )
+
+
 async def _load_transcripts(db: AsyncSession, session_id: uuid.UUID) -> list[Transcript]:
     result = await db.execute(
         select(Transcript)
@@ -113,26 +131,57 @@ async def create_session(
 
 @router.get("", response_model=SessionListOut)
 async def list_sessions(
-    limit: int = Query(default=50, ge=1, le=200),
+    status: str | None = Query(default=None),
+    query: str | None = Query(default=None, max_length=255),
+    limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> SessionListOut:
-    total_stmt = select(func.count(AppointmentSession.id)).where(
-        AppointmentSession.doctor_id == user.id
-    )
+    from app.models.protocol import Protocol
+
+    filters = [AppointmentSession.doctor_id == user.id]
+
+    if status and status != "all":
+        try:
+            status_enum = SessionStatus(status)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Неизвестный статус сессии: {status}",
+            ) from exc
+        filters.append(AppointmentSession.status == status_enum)
+
+    if query:
+        q = query.strip()
+        if q:
+            # ILIKE on Postgres; SQLAlchemy translates to LOWER(col) LIKE LOWER(?)
+            # on SQLite (which is ASCII-only for LOWER — good enough for MVP).
+            filters.append(
+                AppointmentSession.patient_full_name.ilike(f"%{q}%")
+            )
+
+    total_stmt = select(func.count(AppointmentSession.id)).where(*filters)
     total = (await db.execute(total_stmt)).scalar_one()
 
     stmt = (
-        select(AppointmentSession)
-        .where(AppointmentSession.doctor_id == user.id)
+        select(AppointmentSession, Protocol.final_diagnosis)
+        .outerjoin(Protocol, Protocol.session_id == AppointmentSession.id)
+        .where(*filters)
         .order_by(AppointmentSession.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
-    rows = (await db.execute(stmt)).scalars().all()
+    rows = (await db.execute(stmt)).all()
+
+    items: list[SessionOut] = []
+    for sess, final_diagnosis in rows:
+        data = SessionOut.model_validate(sess).model_dump()
+        data["final_diagnosis"] = final_diagnosis
+        items.append(SessionOut(**data))
+
     return SessionListOut(
-        items=[SessionOut.model_validate(r) for r in rows],
+        items=items,
         total=int(total),
         limit=limit,
         offset=offset,
@@ -187,6 +236,7 @@ async def set_consent(
     user: User = Depends(get_current_user),
 ) -> SessionOut:
     sess = await _get_own_session(session_id, db, user)
+    _ensure_not_finalized(sess)
     if not payload.granted:
         _audit(
             db,
@@ -248,6 +298,7 @@ async def stop_recording(
     user: User = Depends(get_current_user),
 ) -> SessionOut:
     sess = await _get_own_session(session_id, db, user)
+    _ensure_not_finalized(sess)
     if sess.status != SessionStatus.recording:
         # Idempotent-ish: if it's already draft, still log and return.
         pass
@@ -270,6 +321,7 @@ async def delete_audio(
     user: User = Depends(get_current_user),
 ) -> SessionOut:
     sess = await _get_own_session(session_id, db, user)
+    _ensure_not_finalized(sess)
     await db.execute(delete(Transcript).where(Transcript.session_id == sess.id))
     sess.status = SessionStatus.draft
     _audit(
@@ -352,6 +404,7 @@ async def patch_transcript(
     user: User = Depends(get_current_user),
 ) -> TranscriptOut:
     sess = await _get_own_session(session_id, db, user)
+    _ensure_not_closed(sess)
     result = await db.execute(
         select(Transcript).where(
             Transcript.id == transcript_id,
@@ -386,6 +439,7 @@ async def delete_transcript(
     user: User = Depends(get_current_user),
 ) -> None:
     sess = await _get_own_session(session_id, db, user)
+    _ensure_not_closed(sess)
     result = await db.execute(
         select(Transcript).where(
             Transcript.id == transcript_id,

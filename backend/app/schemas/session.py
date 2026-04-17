@@ -43,10 +43,11 @@ class SessionBase(BaseModel):
 
 
 class SessionOut(SessionBase):
-    pass
+    final_diagnosis: str | None = None
 
 
 class SessionDetailOut(SessionBase):
+    final_diagnosis: str | None = None
     transcripts: list[TranscriptOut] = Field(default_factory=list)
 
 
