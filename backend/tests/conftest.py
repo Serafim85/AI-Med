@@ -21,11 +21,14 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 # Import the application AFTER env is wired.
+# NB: ``import app.models`` rebinds the name ``app`` in this module to the
+# package, so it must come BEFORE ``from app.main import app`` (which binds
+# ``app`` to the FastAPI instance).
+import app.models  # noqa: E402,F401  -- ensure all models are registered
 from app.core.security import hash_password  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
-import app.models  # noqa: E402,F401  -- ensure all models are registered
 from app.models.user import User  # noqa: E402
 
 

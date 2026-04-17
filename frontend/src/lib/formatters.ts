@@ -1,4 +1,8 @@
 import type {
+  RedFlagSeverity,
+  TreatmentKind,
+} from '../api/analysis'
+import type {
   AppointmentType,
   PatientSex,
   SessionStatus,
@@ -69,4 +73,35 @@ export function formatDurationMs(ms: number): string {
 export function formatChunkTimestamp(ms: number | null): string {
   if (ms == null) return '—'
   return formatDurationMs(ms)
+}
+
+export const TREATMENT_KIND_LABEL: Record<TreatmentKind, string> = {
+  medication: 'Медикаменты',
+  investigation: 'Обследования',
+  non_drug: 'Немедикаментозные рекомендации',
+  follow_up: 'Контрольный визит',
+}
+
+export const TREATMENT_KIND_ORDER: TreatmentKind[] = [
+  'medication',
+  'investigation',
+  'non_drug',
+  'follow_up',
+]
+
+export const SEVERITY_LABEL: Record<RedFlagSeverity, string> = {
+  low: 'Низкая',
+  medium: 'Средняя',
+  high: 'Высокая',
+}
+
+export const SEVERITY_BADGE: Record<RedFlagSeverity, string> = {
+  low: 'bg-amber-50 text-amber-700 border-amber-200',
+  medium: 'bg-orange-50 text-orange-700 border-orange-200',
+  high: 'bg-red-50 text-red-700 border-red-200',
+}
+
+export function formatProbability(p: number | null | undefined): string {
+  if (p == null || Number.isNaN(p)) return '—'
+  return `${Math.round(p * 100)}%`
 }

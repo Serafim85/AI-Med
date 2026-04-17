@@ -16,6 +16,7 @@ import {
   type Speaker,
   type Transcript,
 } from '../api/sessions'
+import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { TranscriptItem } from '../components/TranscriptItem'
 import { useAudioRecorder } from '../hooks/useAudioRecorder'
 import {
@@ -261,6 +262,8 @@ export function SessionDetailPage() {
   const isPaused = recorderStatus === 'paused'
   const recorderBusy =
     recorderStatus === 'recording' || recorderStatus === 'stopping'
+  const recordingPhaseActive =
+    session.status === 'draft' || session.status === 'recording'
 
   return (
     <section className="space-y-6">
@@ -342,29 +345,31 @@ export function SessionDetailPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-sm">
-              {(
-                [
-                  ['doctor', 'Врач'],
-                  ['patient', 'Пациент'],
-                ] as [Speaker, string][]
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`px-3 py-1.5 ${
-                    currentSpeaker === value
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-white text-slate-700 hover:bg-slate-100'
-                  }`}
-                  onClick={() => setCurrentSpeaker(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {recordingPhaseActive && (
+              <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                {(
+                  [
+                    ['doctor', 'Врач'],
+                    ['patient', 'Пациент'],
+                  ] as [Speaker, string][]
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`px-3 py-1.5 ${
+                      currentSpeaker === value
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white text-slate-700 hover:bg-slate-100'
+                    }`}
+                    onClick={() => setCurrentSpeaker(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            {!isRecording && !isPaused && (
+            {recordingPhaseActive && !isRecording && !isPaused && (
               <button
                 type="button"
                 onClick={handleStartRecording}
@@ -380,7 +385,7 @@ export function SessionDetailPage() {
               </button>
             )}
 
-            {isRecording && (
+            {recordingPhaseActive && isRecording && (
               <>
                 <button
                   type="button"
@@ -399,7 +404,7 @@ export function SessionDetailPage() {
               </>
             )}
 
-            {isPaused && (
+            {recordingPhaseActive && isPaused && (
               <>
                 <button
                   type="button"
@@ -498,7 +503,7 @@ export function SessionDetailPage() {
         </section>
       )}
 
-      {hasConsent && session.transcripts.length > 0 && (
+      {hasConsent && session.transcripts.length > 0 && session.status === 'draft' && (
         <section className="bg-white border border-slate-200 rounded-xl p-5">
           <button
             type="button"
@@ -513,6 +518,8 @@ export function SessionDetailPage() {
           </p>
         </section>
       )}
+
+      <AnalysisSection sessionId={id} session={session} />
     </section>
   )
 }

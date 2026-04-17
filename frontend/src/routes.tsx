@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AppLayout } from './pages/AppLayout'
 import { LoginPage } from './pages/LoginPage'
+import { SessionConfirmPage } from './pages/SessionConfirmPage'
 import { SessionCreatePage } from './pages/SessionCreatePage'
 import { SessionDetailPage } from './pages/SessionDetailPage'
 import { SessionsListPage } from './pages/SessionsListPage'
@@ -29,6 +30,7 @@ export function AppRoutes() {
         <Route index element={<SessionsListPage />} />
         <Route path="sessions/new" element={<SessionCreatePage />} />
         <Route path="sessions/:id" element={<SessionDetailPage />} />
+        <Route path="sessions/:id/confirm" element={<SessionConfirmPage />} />
       </Route>
       <Route path="*" element={<RootRedirect />} />
     </Routes>
