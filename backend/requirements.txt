@@ -1,0 +1,12 @@
+# Pinned runtime dependencies (mirror of pyproject.toml [project.dependencies]).
+# Kept in sync for easy `pip install -r requirements.txt` in the Docker image.
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.4.0
+SQLAlchemy[asyncio]>=2.0.30
+asyncpg>=0.29.0
+alembic>=1.13.2
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+python-multipart>=0.0.9
