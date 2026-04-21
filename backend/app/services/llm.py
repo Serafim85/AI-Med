@@ -224,24 +224,86 @@ _RESPONSE_JSON_SCHEMA: dict[str, Any] = {
 
 
 SYSTEM_PROMPT = (
-    "Ты — ИИ-ассистент врача. Ты помогаешь врачу структурировать информацию "
-    "с амбулаторного приёма и получать черновик протокола.\n"
-    "ВАЖНО: твои предложения носят исключительно справочный характер. "
-    "Финальная ответственность за диагноз и назначения — на враче. "
-    "Никогда не выдумывай жалобы, анамнез, препараты или обследования, "
-    "которых нет в диалоге. Если данных мало или они противоречивы — честно "
-    "пиши об этом в соответствующем поле (например, в `complaints` "
-    "укажи «Недостаточно данных для анализа»).\n"
-    "Отвечай СТРОГО в соответствии с JSON-схемой. Никакого текста вне "
-    "JSON. Все поля — на русском языке. Если расшифровка содержит меньше "
-    "30 слов, то верни пустые `diagnosis_suggestions`, `treatment_plan`, "
-    "`red_flags`, и в `complaints` укажи «Недостаточно данных для анализа».\n"
-    "Для `diagnosis_suggestions` возвращай не более 3 вариантов, "
-    "отсортированных по убыванию probability (вероятности в [0, 1]). "
-    "`icd10_code` — строка кода МКБ-10 или null, если уверенности нет.\n"
-    "Для `treatment_plan` используй kind ∈ {medication, investigation, "
-    "non_drug, follow_up}. В `dosage` и `duration` допускается null, "
-    "если не применимо."
+    "Ты — ИИ-ассистент врача. Твоя задача — по расшифровке амбулаторного "
+    "приёма подготовить ЧЕРНОВИК структурированного протокола, топ "
+    "диагнозов и плана лечения.\n"
+    "\n"
+    "ВАЖНО ПРО ОТКАЗЫ: это черновик, врач обязательно проверит и "
+    "отредактирует каждое поле перед финализацией. Твоя задача — "
+    "максимально полно ИЗВЛЕЧЬ информацию, которая уже прозвучала, "
+    "и предложить уверенные гипотезы. НЕЛЬЗЯ возвращать "
+    "«Недостаточно данных», если пациент упомянул хотя бы один "
+    "конкретный симптом (кашель, одышка, боль, температура и т.п.). "
+    "Даже если говорил только пациент (монолог без реплик врача), "
+    "ты ОБЯЗАН извлечь из его слов жалобы и анамнез. Пустой ответ "
+    "допустим ТОЛЬКО если вся расшифровка короче ~8 слов ИЛИ в ней "
+    "нет ни одного описания симптома/ощущения.\n"
+    "\n"
+    "ЖЁСТКИЕ ТЕХНИЧЕСКИЕ ПРАВИЛА:\n"
+    "1. Отвечай СТРОГО в виде JSON-объекта по предоставленной схеме. "
+    "Никакого текста вне JSON, никаких markdown-блоков.\n"
+    "2. Все поля — на русском языке.\n"
+    "3. Не выдумывай конкретные дозировки/препараты/анализы, которых "
+    "не подразумевает клиническая картина. Но обобщённые клинические "
+    "выводы (например, «характерно для бронхиальной астмы») делать "
+    "МОЖНО и НУЖНО — ты для этого и нужен.\n"
+    "\n"
+    "КАК ЗАПОЛНЯТЬ ПОЛЯ protocol:\n"
+    "- `complaints` — перечисли конкретные жалобы пациента (симптомы, "
+    "их длительность, локализация, триггеры, характер). Это поле "
+    "практически всегда должно быть заполнено, если в диалоге есть "
+    "хотя бы одно упоминание симптома. При необходимости переформулируй "
+    "в клиническом стиле: «у меня отдышка рядом с животными» → "
+    "«эпизоды одышки при контакте с животными».\n"
+    "- `anamnesis` — история настоящего заболевания (когда началось, "
+    "как развивалось, что провоцирует/облегчает), сопутствующие и "
+    "перенесённые заболевания. Если пациент назвал триггер (например, "
+    "«когда рядом с животными»), это часть anamnesis.\n"
+    "- `examination` — то, что ВРАЧ СООБЩИЛ ВСЛУХ о физикальном "
+    "осмотре (осмотрел, пальпировал, выслушал — что увидел). Если "
+    "осмотр в записи не озвучивался — оставь \"\".\n"
+    "- `allergies` — если пациент явно подтвердил отсутствие аллергий, "
+    "напиши «Аллергологический анамнез не отягощён». Если упомянул "
+    "конкретные — перечисли. Если не спрашивали — оставь \"\".\n"
+    "- `medications` — препараты, которые пациент принимает сейчас "
+    "или недавно. Если не упоминалось — \"\".\n"
+    "\n"
+    "DIAGNOSIS_SUGGESTIONS:\n"
+    "- До 3 вариантов, отсортированных по убыванию probability "
+    "(число в [0, 1]). Если симптомы образуют классическую картину "
+    "(например, одышка + свистящее дыхание + кашель + триггер — "
+    "аллерген/физическая нагрузка → бронхиальная астма) — смело "
+    "ставь probability 0.7–0.85 у лидера.\n"
+    "- `icd10_code` — строка МКБ-10 (например, «J45.0» для "
+    "аллергической астмы, «J06.9» для ОРВИ) или null, если не уверен.\n"
+    "- `supporting_symptoms` / `contradicting_symptoms` — КОНКРЕТНЫЕ "
+    "фразы/симптомы из расшифровки.\n"
+    "- `reasoning` — 1–2 предложения клинического обоснования.\n"
+    "\n"
+    "TREATMENT_PLAN (черновик назначений — врач утвердит):\n"
+    "- kind ∈ {medication, investigation, non_drug, follow_up}.\n"
+    "- Добавь осмысленные обследования для подтверждения диагноза "
+    "(например, спирометрия / пикфлоуметрия при подозрении на астму; "
+    "мазок из зева при фарингите; ОАК + СРБ при лихорадке).\n"
+    "- Для распространённых состояний предложи хотя бы один препарат "
+    "с предполагаемой дозировкой и длительностью (например, "
+    "парацетамол 500 мг до 4 раз в сутки при T >38 °C; сальбутамол "
+    "100 мкг по потребности при приступе одышки).\n"
+    "- Немедикаментозные рекомендации — режим, элиминация триггера, "
+    "питьё. Контрольный визит — через сколько дней прийти повторно.\n"
+    "- `dosage` / `duration` могут быть null, если неприменимо.\n"
+    "\n"
+    "RED_FLAGS (опционально):\n"
+    "- Тревожные симптомы с severity ∈ {low, medium, high}: одышка в "
+    "покое, кровохарканье, T >39 °C более 3 суток, ригидность "
+    "затылочных мышц, острая боль в груди и т.п.\n"
+    "- Если таких симптомов нет — верни пустой массив [].\n"
+    "\n"
+    "ЕДИНСТВЕННЫЙ СЛУЧАЙ ПУСТОГО ОТВЕТА:\n"
+    "Вся расшифровка короче ~8 слов ИЛИ не содержит ни одного "
+    "описания симптома/жалобы/ощущения. Только тогда `complaints` = "
+    "«Недостаточно данных для анализа», остальные строки — \"\", "
+    "массивы — []."
 )
 
 
@@ -381,21 +443,37 @@ def parse_llm_response(raw: dict[str, Any]) -> LLMAnalysisResult:
 
 
 class OpenAIStructuredLLM:
-    """OpenAI ``chat.completions`` with Structured Outputs (JSON schema).
+    """OpenAI-compatible ``chat.completions`` client for structured analysis.
 
-    The client is created lazily on the first call so the app can boot
-    (and tests can run) without ``OPENAI_API_KEY`` in the environment.
+    Works with any server that implements the OpenAI Chat Completions API:
+    OpenAI itself, LM Studio, Ollama (``/v1``), DeepSeek, Groq, etc.
+
+    JSON enforcement strategy is configurable via ``json_mode``:
+    * ``"json_schema"`` — Structured Outputs (strict schema). Supported by
+      OpenAI ``gpt-4o``/``gpt-4o-mini``.
+    * ``"json_object"`` — loose JSON mode (the server guarantees valid JSON
+      but not the shape). Supported by LM Studio, Ollama and most others.
+      We inline a textual schema description into the system prompt and
+      rely on :func:`parse_llm_response` for validation.
+
+    The underlying client is created lazily so the app can boot (and tests
+    can run) without any LLM credentials configured.
     """
 
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "gpt-4o-mini",
+        model: str | None = None,
+        base_url: str | None = None,
+        json_mode: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 2000,
     ) -> None:
-        self._api_key = api_key or get_settings().OPENAI_API_KEY
-        self._model = model
+        settings = get_settings()
+        self._api_key = api_key if api_key is not None else settings.resolved_llm_api_key
+        self._model = model or settings.LLM_MODEL
+        self._base_url = base_url or settings.LLM_BASE_URL
+        self._json_mode = json_mode or settings.LLM_JSON_MODE
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._client = None
@@ -403,15 +481,17 @@ class OpenAIStructuredLLM:
     def _ensure_client(self):
         if self._client is not None:
             return self._client
-        if not self._api_key:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
+        # Local servers (LM Studio, Ollama) typically do not require a key,
+        # but the OpenAI SDK still wants a non-empty string. Use a dummy
+        # when the user hasn't set one.
+        api_key = self._api_key or "not-needed"
         try:
             from openai import OpenAI
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
                 "openai package is required for OpenAIStructuredLLM; install `openai>=1.40`"
             ) from exc
-        self._client = OpenAI(api_key=self._api_key)
+        self._client = OpenAI(api_key=api_key, base_url=self._base_url)
         return self._client
 
     def _build_user_prompt(
@@ -440,6 +520,25 @@ class OpenAIStructuredLLM:
             f"{dialogue}\n"
         )
 
+    def _build_system_prompt(self) -> str:
+        if self._json_mode == "json_schema":
+            return SYSTEM_PROMPT
+        # Loose JSON mode: inject the schema textually so the model knows
+        # the expected shape. Validation happens locally after the call.
+        schema_text = json.dumps(_RESPONSE_JSON_SCHEMA["schema"], ensure_ascii=False, indent=2)
+        return (
+            SYSTEM_PROMPT
+            + "\n\nВерни ответ строго в виде JSON-объекта, соответствующего "
+            "следующей JSON-схеме (additionalProperties:false). Не добавляй "
+            "лишних полей и не оборачивай ответ в markdown-блоки.\n"
+            f"Схема:\n{schema_text}"
+        )
+
+    def _response_format(self) -> dict[str, Any]:
+        if self._json_mode == "json_schema":
+            return {"type": "json_schema", "json_schema": _RESPONSE_JSON_SCHEMA}
+        return {"type": "json_object"}
+
     async def analyze_dialogue(
         self,
         patient: PatientContext,
@@ -447,6 +546,8 @@ class OpenAIStructuredLLM:
     ) -> LLMAnalysisResult:
         client = self._ensure_client()
         user_prompt = self._build_user_prompt(patient, transcript)
+        system_prompt = self._build_system_prompt()
+        response_format = self._response_format()
 
         import anyio
 
@@ -455,12 +556,9 @@ class OpenAIStructuredLLM:
                 model=self._model,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": _RESPONSE_JSON_SCHEMA,
-                },
+                response_format=response_format,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
             )
@@ -477,7 +575,7 @@ class OpenAIStructuredLLM:
         except RuntimeError:
             raise
         except Exception as exc:
-            logger.exception("OpenAI LLM call failed: %s", exc)
+            logger.exception("LLM call failed: %s", exc)
             raise RuntimeError(f"LLM call failed: {exc}") from exc
 
         return parse_llm_response(raw)

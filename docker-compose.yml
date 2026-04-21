@@ -30,12 +30,40 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aimed:aimed@db:5432/aimed}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-local-env}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # LLM (LM Studio on the host by default; override for OpenAI / DeepSeek / etc.)
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5-7b-instruct}
+      LLM_JSON_MODE: ${LLM_JSON_MODE:-json_object}
+      # ASR (self-hosted faster-whisper-server by default)
+      ASR_API_KEY: ${ASR_API_KEY:-}
+      ASR_BASE_URL: ${ASR_BASE_URL:-http://whisper:8000/v1}
+      ASR_MODEL: ${ASR_MODEL:-Systran/faster-whisper-small}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    extra_hosts:
+      # Allows reaching LM Studio running on the host Mac from the container.
+      - "host.docker.internal:host-gateway"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  whisper:
+    # OpenAI-compatible ASR server powered by faster-whisper.
+    # First request downloads the model into the named volume below.
+    image: fedirz/faster-whisper-server:latest-cpu
+    container_name: aimed-whisper
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      WHISPER__MODEL: ${ASR_MODEL:-Systran/faster-whisper-small}
+      WHISPER__COMPUTE_TYPE: int8
+      WHISPER__INFERENCE_DEVICE: cpu
+    ports:
+      - "${WHISPER_PORT:-9000}:8000"
+    volumes:
+      - whisper_models:/root/.cache/huggingface
 
   frontend:
     build:
@@ -56,3 +84,4 @@ services:
 
 volumes:
   postgres_data:
+  whisper_models:

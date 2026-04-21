@@ -232,13 +232,58 @@ PDF-протокола. Для его воспроизведения понад�
 
 ## Переменные окружения
 
-| Переменная          | Где используется | Назначение                                                  |
-| ------------------- | ---------------- | ----------------------------------------------------------- |
-| `DATABASE_URL`      | backend          | Async SQLAlchemy DSN (asyncpg)                              |
-| `JWT_SECRET`        | backend          | Секрет для подписи JWT (используется в Шаге 2)              |
-| `OPENAI_API_KEY`    | backend          | Ключ OpenAI (Whisper / gpt-4o-mini) — задействован в Шаге 3 |
-| `CORS_ORIGINS`      | backend          | Список разрешённых origin'ов, через запятую                 |
-| `VITE_API_BASE_URL` | frontend         | Базовый URL REST API                                        |
+| Переменная          | Где используется | Назначение                                                                     |
+| ------------------- | ---------------- | ------------------------------------------------------------------------------ |
+| `DATABASE_URL`      | backend          | Async SQLAlchemy DSN (asyncpg)                                                 |
+| `JWT_SECRET`        | backend          | Секрет для подписи JWT                                                         |
+| `OPENAI_API_KEY`    | backend          | Legacy-ключ OpenAI; используется как fallback, если `LLM_API_KEY`/`ASR_API_KEY` пусты |
+| `LLM_API_KEY`       | backend          | Ключ LLM-провайдера (OpenAI / DeepSeek / Groq). Для LM Studio можно оставить пустым |
+| `LLM_BASE_URL`      | backend          | OpenAI-совместимый endpoint LLM (должен содержать `/v1`)                       |
+| `LLM_MODEL`         | backend          | Имя/слаг модели (для LM Studio — как отображается в его интерфейсе)            |
+| `LLM_JSON_MODE`     | backend          | `json_schema` (OpenAI, строгая схема) или `json_object` (LM Studio / Ollama / DeepSeek) |
+| `ASR_API_KEY`       | backend          | Ключ ASR (для локального faster-whisper-server не нужен)                       |
+| `ASR_BASE_URL`      | backend          | OpenAI-совместимый endpoint Whisper                                            |
+| `ASR_MODEL`         | backend          | Имя модели Whisper (например, `Systran/faster-whisper-small` или `whisper-1`)  |
+| `CORS_ORIGINS`      | backend          | Список разрешённых origin'ов, через запятую                                    |
+| `VITE_API_BASE_URL` | frontend         | Базовый URL REST API                                                           |
+
+### Провайдеры LLM/ASR
+
+По умолчанию стенд настроен на **полностью локальный** вариант: LM Studio на Mac-хосте
+для LLM и контейнер `whisper` (faster-whisper-server) для распознавания речи. Это бесплатно
+и не требует регистраций/оплаты.
+
+**LM Studio (LLM).** Установите [LM Studio](https://lmstudio.ai), скачайте модель
+(рекомендую `Qwen2.5 7B Instruct` или `Llama 3.1 8B Instruct` — хорошо держат JSON-режим
+и русский) и запустите локальный сервер в разделе **Developer → Local Server** (порт `1234`).
+В `.env`:
+
+```
+LLM_BASE_URL=http://host.docker.internal:1234/v1
+LLM_MODEL=qwen2.5-7b-instruct
+LLM_JSON_MODE=json_object
+```
+
+Из контейнера backend LM Studio доступна по `host.docker.internal` — соответствующий
+`extra_hosts` уже прописан в `docker-compose.yml`.
+
+**faster-whisper-server (ASR).** Запускается вместе с остальными сервисами через
+`docker compose up`. При первом вызове `/transcripts` контейнер скачает модель
+(`Systran/faster-whisper-small`, ≈460 MB) в volume `whisper_models`. На Apple Silicon
+контейнер стартует через Rosetta (`platform: linux/amd64`), работает в CPU-режиме —
+для коротких реплик ~5 сек этого достаточно.
+
+**Переключение на облачных провайдеров** (если/когда появится доступ):
+
+- **OpenAI:** `LLM_BASE_URL=https://api.openai.com/v1`, `LLM_MODEL=gpt-4o-mini`,
+  `LLM_JSON_MODE=json_schema`; `ASR_BASE_URL=https://api.openai.com/v1`,
+  `ASR_MODEL=whisper-1`; ключи — `LLM_API_KEY` / `ASR_API_KEY` (или один `OPENAI_API_KEY`).
+- **DeepSeek** (только LLM): `LLM_BASE_URL=https://api.deepseek.com/v1`,
+  `LLM_MODEL=deepseek-chat`, `LLM_JSON_MODE=json_object`.
+- **Groq:** `LLM_BASE_URL=https://api.groq.com/openai/v1`,
+  `LLM_MODEL=llama-3.1-70b-versatile`, `LLM_JSON_MODE=json_object`;
+  ASR на Groq — `ASR_BASE_URL=https://api.groq.com/openai/v1`,
+  `ASR_MODEL=whisper-large-v3`.
 
 ## Конвенции
 
