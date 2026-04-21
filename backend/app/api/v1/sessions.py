@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -342,8 +342,11 @@ async def delete_audio(
 
 @router.post(
     "/{session_id}/transcripts",
-    response_model=TranscriptOut,
+    response_model=TranscriptOut | None,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        204: {"description": "Chunk contained only silence / noise; no transcript stored"},
+    },
 )
 async def upload_transcript_chunk(
     session_id: uuid.UUID,
@@ -354,7 +357,7 @@ async def upload_transcript_chunk(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     asr: ASRService = Depends(get_asr_service),
-) -> TranscriptOut:
+) -> TranscriptOut | Response:
     sess = await _get_own_session(session_id, db, user)
     if sess.status != SessionStatus.recording:
         raise HTTPException(
@@ -376,6 +379,13 @@ async def upload_transcript_chunk(
 
     # Explicit: we never persist audio bytes. Drop reference immediately.
     audio_bytes = b""
+
+    # Whisper sometimes returns the empty string for pure silence/noise
+    # (our ASR layer also filters out known hallucinations like "Субтитры
+    # сделал …"). We don't want to create a ghost transcript row in that
+    # case — just tell the client "nothing worth recording".
+    if not result.text.strip():
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     transcript = Transcript(
         session_id=sess.id,

@@ -5,10 +5,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,19 +19,43 @@ from app.models.user import User
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 12
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt ограничен 72 байтами пароля. Мы преобразуем в UTF-8 и обрезаем
+# на безопасной границе — это стандартная практика (то же делает, например,
+# Django). Хэши, созданные этой функцией, читаются стандартным
+# `bcrypt.checkpw`, в том числе старыми реализациями passlib.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _prepare(plain: str) -> bytes:
+    data = plain.encode("utf-8")
+    if len(data) <= _BCRYPT_MAX_BYTES:
+        return data
+    # Обрезаем по байтам, не ломая последнюю multibyte-последовательность.
+    truncated = data[:_BCRYPT_MAX_BYTES]
+    while truncated:
+        try:
+            truncated.decode("utf-8")
+            break
+        except UnicodeDecodeError:
+            truncated = truncated[:-1]
+    return truncated
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(_prepare(plain), salt)
+    return hashed.decode("utf-8")
 
 
 def verify_password(plain: str, password_hash: str) -> bool:
+    if not password_hash:
+        return False
     try:
-        return _pwd_context.verify(plain, password_hash)
-    except ValueError:
+        return bcrypt.checkpw(_prepare(plain), password_hash.encode("utf-8"))
+    except (ValueError, TypeError):
         return False
 
 

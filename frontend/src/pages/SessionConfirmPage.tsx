@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import {
@@ -29,6 +29,13 @@ export function SessionConfirmPage() {
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [pdfReady, setPdfReady] = useState(false)
+
+  // Synchronous guards: React.StrictMode (dev) and fast double-clicks can
+  // otherwise cause the mutation's onSuccess to fire twice, producing two
+  // PDF downloads. State-based `isPending` updates asynchronously and
+  // doesn't protect against that.
+  const confirmInFlightRef = useRef(false)
+  const downloadingRef = useRef(false)
 
   const summaryQuery = useQuery<SessionSummary>({
     queryKey: ['session-summary', id],
@@ -92,6 +99,8 @@ export function SessionConfirmPage() {
     onSuccess: async () => {
       setConfirmError(null)
       invalidate()
+      if (downloadingRef.current) return
+      downloadingRef.current = true
       try {
         await downloadSessionPdf(id)
         setPdfReady(true)
@@ -99,12 +108,22 @@ export function SessionConfirmPage() {
       } catch (err) {
         setToast(null)
         setConfirmError(extractDetail(err, 'PDF не удалось скачать'))
+      } finally {
+        downloadingRef.current = false
       }
     },
     onError: (err) => {
+      confirmInFlightRef.current = false
       setConfirmError(extractDetail(err, 'Не удалось подтвердить протокол'))
     },
   })
+
+  const handleConfirm = useCallback(() => {
+    if (confirmInFlightRef.current || confirmMutation.isPending) return
+    confirmInFlightRef.current = true
+    setConfirmError(null)
+    confirmMutation.mutate()
+  }, [confirmMutation])
 
   const closeMutation = useMutation({
     mutationFn: () => closeSession(id),
@@ -119,10 +138,14 @@ export function SessionConfirmPage() {
   })
 
   const handleDownloadPdf = async () => {
+    if (downloadingRef.current) return
+    downloadingRef.current = true
     try {
       await downloadSessionPdf(id)
     } catch (err) {
       setConfirmError(extractDetail(err, 'PDF не удалось скачать'))
+    } finally {
+      downloadingRef.current = false
     }
   }
 
@@ -187,11 +210,8 @@ export function SessionConfirmPage() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                setConfirmError(null)
-                confirmMutation.mutate()
-              }}
-              disabled={confirmMutation.isPending}
+              onClick={handleConfirm}
+              disabled={confirmMutation.isPending || pdfReady}
               className="inline-flex items-center rounded-lg bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-500 disabled:opacity-60"
             >
               {confirmMutation.isPending

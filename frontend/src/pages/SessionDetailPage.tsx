@@ -181,7 +181,11 @@ export function SessionDetailPage() {
           startedAtMs,
           endedAtMs,
         })
-        appendTranscriptToCache(transcript)
+        if (transcript) {
+          appendTranscriptToCache(transcript)
+        }
+        // `transcript === null` means the server detected silence/noise and
+        // did not create a row — just drop the pending placeholder.
         removePendingChunk(clientId)
       } catch (err) {
         const message =

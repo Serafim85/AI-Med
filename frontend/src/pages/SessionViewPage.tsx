@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import {
@@ -32,6 +32,8 @@ export function SessionViewPage() {
 
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  // Guards against double downloads from fast double-clicks / StrictMode.
+  const downloadingRef = useRef(false)
 
   const summaryQuery = useQuery<SessionSummary>({
     queryKey: ['session-summary', id],
@@ -58,10 +60,14 @@ export function SessionViewPage() {
   })
 
   const handleDownload = async () => {
+    if (downloadingRef.current) return
+    downloadingRef.current = true
     try {
       await downloadSessionPdf(id)
     } catch (err) {
       setError(extractDetail(err, 'Не удалось скачать PDF'))
+    } finally {
+      downloadingRef.current = false
     }
   }
 

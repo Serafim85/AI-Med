@@ -149,19 +149,22 @@ export interface UploadChunkPayload {
 
 export async function uploadTranscriptChunk(
   payload: UploadChunkPayload,
-): Promise<Transcript> {
+): Promise<Transcript | null> {
   const form = new FormData()
   const filename = `chunk-${payload.startedAtMs}.webm`
   form.append('audio', payload.audio, filename)
   form.append('speaker', payload.speaker)
   form.append('started_at_ms', String(payload.startedAtMs))
   form.append('ended_at_ms', String(payload.endedAtMs))
-  const { data } = await apiClient.post<Transcript>(
+  const response = await apiClient.post<Transcript | ''>(
     `/sessions/${payload.sessionId}/transcripts`,
     form,
     { headers: { 'Content-Type': 'multipart/form-data' } },
   )
-  return data
+  // 204 No Content = chunk was silence / recognized as a Whisper hallucination
+  // and filtered out on the server. Nothing to append to the transcript.
+  if (response.status === 204) return null
+  return response.data as Transcript
 }
 
 export async function patchTranscript(
